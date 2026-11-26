@@ -16,17 +16,21 @@ describe("addMonthsIso", () => {
 });
 
 describe("generateFlatMonthlySchedule", () => {
-  it("computes flat interest and splits evenly with cent-exact final installment", () => {
-    const result = generateFlatMonthlySchedule(10000, 10, 3, "2026-01-15");
-    expect(result.totalInterest).toBe(1000);
-    expect(result.totalPayable).toBe(11000);
-    expect(result.installments).toEqual([
-      { installmentNumber: 1, dueDate: "2026-02-15", amountDue: 3666.66 },
-      { installmentNumber: 2, dueDate: "2026-03-15", amountDue: 3666.66 },
-      { installmentNumber: 3, dueDate: "2026-04-15", amountDue: 3666.68 },
-    ]);
+  it("applies the flat rate for every month and reconciles cents in the final installment", () => {
+    const result = generateFlatMonthlySchedule(10000, 2, 9, "2026-01-31");
+    expect(result.totalInterest).toBe(1800);
+    expect(result.totalPayable).toBe(11800);
+    expect(result.installments).toHaveLength(9);
+    expect(result.installments[0]).toEqual({ installmentNumber: 1, dueDate: "2026-02-28", amountDue: 1311.11 });
+    expect(result.installments[8]).toEqual({ installmentNumber: 9, dueDate: "2026-10-31", amountDue: 1311.12 });
     const sum = result.installments.reduce((acc, row) => acc + row.amountDue, 0);
-    expect(Math.round(sum * 100) / 100).toBe(11000);
+    expect(Math.round(sum * 100) / 100).toBe(11800);
+  });
+
+  it("rounds interest after multiplying by the full term", () => {
+    const result = generateFlatMonthlySchedule(1, 0.5, 3, "2026-01-15");
+    expect(result.totalInterest).toBe(0.02);
+    expect(result.installments.map(({ amountDue }) => amountDue)).toEqual([0.34, 0.34, 0.34]);
   });
 
   it("supports zero interest loans", () => {

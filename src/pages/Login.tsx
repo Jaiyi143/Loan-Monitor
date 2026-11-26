@@ -1,19 +1,24 @@
 import { useState, type FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { Landmark, Lock } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { normalizePhoneNumber } from "../lib/phoneNumber";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
-export function Login() {
+export function Login({ createAccount = false }: { createAccount?: boolean }) {
   const { user, profile, loading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [resetMode, setResetMode] = useState(false);
+  const [resetMode, setResetMode] = useState(() => !createAccount && searchParams.get("reset") === "1");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const emailOnly = createAccount || resetMode;
 
-  if (!loading && user && profile) {
+  if (!resetMode && !loading && user && profile) {
     return <Navigate to={profile.role === "admin" ? "/admin" : "/my-loans"} replace />;
   }
 
@@ -21,15 +26,23 @@ export function Login() {
     e.preventDefault();
     setError(null);
     setNotice(null);
-    setSubmitting(true);
+    const identifier = email.trim();
+    const phoneNumber = identifier.includes("@") ? null : normalizePhoneNumber(identifier);
+    if (!identifier.includes("@") && !phoneNumber) {
+      setError("Enter your email address or a valid phone number.");
+      return;
+    }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    setSubmitting(true);
+    const credentials = phoneNumber ? { phone: phoneNumber, password } : { email: identifier, password };
+    const { error: authError } = await supabase.auth.signInWithPassword(credentials);
 
     if (authError) {
-      setError(authError.message);
+      setError(authError.code === "phone_provider_disabled"
+        ? "Phone sign-in is currently unavailable. Sign in with your email."
+        : authError.code === "phone_not_confirmed"
+          ? "Sign in with your email and verify your phone in Profile."
+          : authError.message);
     }
     setSubmitting(false);
   };
@@ -41,7 +54,7 @@ export function Login() {
     setSubmitting(true);
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/profile`,
+      redirectTo: `${window.location.origin}/`,
     });
 
     if (resetError) {
@@ -52,6 +65,44 @@ export function Login() {
     setSubmitting(false);
   };
 
+  const handleCreateAccount = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+
+    const name = fullName.trim();
+    if (!name) {
+      setError("Enter your full name.");
+      return;
+    }
+    const contactPhone = normalizePhoneNumber(phone);
+    if (!contactPhone) {
+      setError("Enter a valid phone number, such as 0917 123 4567 or a number with its country code.");
+      return;
+    }
+
+    setSubmitting(true);
+    const { data, error: signupError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: { full_name: name, contact_phone: contactPhone, borrower_registration: true },
+        emailRedirectTo: `${window.location.origin}/`,
+      },
+    });
+
+    if (signupError) {
+      setError(signupError.message);
+    } else if (!data.session) {
+      setPassword("");
+      setNotice("Confirm your email first. After signing in, verify your phone in Profile to use it for sign-in.");
+    }
+    setSubmitting(false);
+  };
+
+  const submit = createAccount ? handleCreateAccount : resetMode ? handleReset : handleLogin;
+  const actionLabel = createAccount ? "Create account" : resetMode ? "Send reset link" : "Sign in";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xs sm:p-8">
@@ -60,8 +111,10 @@ export function Login() {
             <Landmark className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-950">Loan Monitor</h1>
-            <p className="text-xs text-slate-500">Private lending &amp; borrower portal</p>
+            <h1 className="text-lg font-semibold tracking-tight text-slate-950">
+              {createAccount ? "Create a borrower account" : "Loan Monitor"}
+            </h1>
+            {!createAccount && <p className="text-xs text-slate-500">Private lending &amp; borrower portal</p>}
           </div>
         </div>
 
@@ -93,22 +146,61 @@ export function Login() {
           </div>
         )}
 
-        <form onSubmit={resetMode ? handleReset : handleLogin} className="mt-6 space-y-4">
+        <form onSubmit={submit} className="mt-6 space-y-4">
+          {createAccount && (
+            <div>
+              <label htmlFor="full-name" className="block text-sm font-medium text-slate-800">
+                Full name
+              </label>
+              <input
+                id="full-name"
+                type="text"
+                required
+                maxLength={120}
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
+              />
+            </div>
+          )}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-800">
-              Email address
+              {emailOnly ? "Email address" : "Email or phone number"}
             </label>
             <input
               id="email"
-              type="email"
+              type={emailOnly ? "email" : "text"}
               required
-              autoComplete="email"
+              autoComplete={emailOnly ? "email" : "username"}
+              autoCapitalize="none"
+              spellCheck={false}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
               className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
             />
           </div>
+
+          {createAccount && (
+            <div>
+              <label htmlFor="signup-phone" className="block text-sm font-medium text-slate-800">
+                Phone number
+              </label>
+              <input
+                id="signup-phone"
+                type="tel"
+                autoComplete="tel"
+                required
+                aria-describedby="signup-phone-hint"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
+              />
+              <p id="signup-phone-hint" className="mt-1 text-xs text-slate-600">
+                Use a Philippine mobile number or include your country code.
+              </p>
+            </div>
+          )}
 
           {!resetMode && (
             <div>
@@ -119,11 +211,14 @@ export function Login() {
                 id="password"
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete={createAccount ? "new-password" : "current-password"}
+                minLength={createAccount ? 8 : undefined}
+                aria-describedby={createAccount ? "signup-password-hint" : undefined}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/15"
               />
+              {createAccount && <p id="signup-password-hint" className="mt-1 text-xs text-slate-600">Use at least 8 characters.</p>}
             </div>
           )}
 
@@ -133,29 +228,33 @@ export function Login() {
             className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-150 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Lock className="h-4 w-4" aria-hidden="true" />
-            <span>
-              {submitting
-                ? "Please wait..."
-                : resetMode
-                  ? "Send reset link"
-                  : "Sign in"}
-            </span>
+            <span>{submitting ? "Please wait..." : actionLabel}</span>
           </button>
         </form>
 
         <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-          <button
-            type="button"
-            onClick={() => {
-              setResetMode((prev) => !prev);
-              setError(null);
-              setNotice(null);
-            }}
-            className="cursor-pointer font-medium text-blue-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-          >
-            {resetMode ? "Back to sign in" : "Forgot password?"}
-          </button>
-          <span>Invite-only accounts</span>
+          {createAccount ? (
+            <Link to="/login" className="font-medium text-blue-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
+              Back to sign in
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setResetMode((prev) => !prev);
+                setError(null);
+                setNotice(null);
+              }}
+              className="cursor-pointer font-medium text-blue-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            >
+              {resetMode ? "Back to sign in" : "Forgot password?"}
+            </button>
+          )}
+          {!createAccount && !resetMode && (
+            <Link to="/signup" className="font-medium text-blue-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
+              Create account
+            </Link>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useLoanSummaries } from "../../hooks/useLoans";
-import { formatDate, formatPHP } from "../../lib/loanMath";
+import { formatDate, formatInterestRate, formatPHP } from "../../lib/loanMath";
 
 export function MyLoans() {
   const { loans, loading, error } = useLoanSummaries();
@@ -75,7 +75,7 @@ export function MyLoans() {
                     {formatPHP(Number(loan.principal))}
                   </div>
                   <div className="text-xs text-slate-500">
-                    {loan.term_months} months · {loan.interest_rate}% flat · Started{" "}
+                    {loan.term_months} months · {formatInterestRate(loan.interest_rate, loan.interest_rate_period)} · Started{" "}
                     {formatDate(loan.start_date)}
                   </div>
                 </div>

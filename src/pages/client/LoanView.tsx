@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { PaymentsTable, ScheduleTable } from "../../components/LoanTables";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useLoanDetail } from "../../hooks/useLoans";
-import { formatDate, formatPHP } from "../../lib/loanMath";
+import { formatDate, formatInterestRate, formatPHP } from "../../lib/loanMath";
 
 export function ClientLoanView() {
   const { id } = useParams();
@@ -38,7 +38,7 @@ export function ClientLoanView() {
               {formatPHP(Number(loan.principal))} Loan
             </h1>
             <p className="text-sm text-slate-600">
-              {loan.term_months} months @ {loan.interest_rate}% flat · Started{" "}
+              {loan.term_months} months @ {formatInterestRate(loan.interest_rate, loan.interest_rate_period)} · Started{" "}
               {formatDate(loan.start_date)}
             </p>
           </div>

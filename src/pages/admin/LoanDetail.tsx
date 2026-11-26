@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { PaymentsTable, ScheduleTable } from "../../components/LoanTables";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useLoanDetail } from "../../hooks/useLoans";
-import { formatDate, formatPHP, todayIsoDate } from "../../lib/loanMath";
+import { formatDate, formatInterestRate, formatPHP, todayIsoDate } from "../../lib/loanMath";
 import { supabase } from "../../lib/supabase";
 import type { LoanStatus, PaymentMethod, PaymentScheduleRow } from "../../types/database";
 
@@ -132,7 +132,7 @@ export function AdminLoanDetail() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryTile label="Principal" value={formatPHP(Number(loan.principal))} />
         <SummaryTile
-          label={`Total Payable (${loan.interest_rate}% flat)`}
+          label={`Total Payable (${formatInterestRate(loan.interest_rate, loan.interest_rate_period)})`}
           value={formatPHP(Number(loan.total_payable))}
         />
         <SummaryTile label="Total Paid" value={formatPHP(Number(loan.total_paid))} tone="success" />
@@ -182,7 +182,7 @@ export function AdminLoanDetail() {
               }}
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
             >
-              <option value="">General payment</option>
+              <option value="">General payment (oldest installments first)</option>
               {openInstallments.map((s) => (
                 <option key={s.id} value={s.id}>
                   #{s.installment_number} · {formatDate(s.due_date)} ({formatPHP(Number(s.amount_due))})

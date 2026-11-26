@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Download, Plus } from "lucide-react";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useLoanSummaries } from "../../hooks/useLoans";
-import { formatDate, formatPHP, toCsv } from "../../lib/loanMath";
+import { formatDate, formatInterestRate, formatPHP, toCsv } from "../../lib/loanMath";
 import type { EffectiveLoanStatus } from "../../types/database";
 
 const FILTERS: { value: "all" | EffectiveLoanStatus; label: string }[] = [
@@ -43,6 +43,7 @@ export function AdminLoans() {
         "Remaining Balance",
         "Next Due Date",
         "Status",
+        "Interest Rate Period",
       ],
       visible.map((l) => [
         l.client_name,
@@ -55,6 +56,7 @@ export function AdminLoans() {
         l.remaining_balance,
         l.next_due_date,
         l.effective_status,
+        l.interest_rate_period,
       ]),
     );
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -157,7 +159,7 @@ export function AdminLoans() {
                       {loan.client_name}
                     </Link>
                     <div className="text-xs font-normal text-slate-500">
-                      {loan.term_months} mo @ {loan.interest_rate}% flat
+                      {loan.term_months} mo @ {formatInterestRate(loan.interest_rate, loan.interest_rate_period)}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-slate-700 tabular-nums">

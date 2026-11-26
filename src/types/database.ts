@@ -3,6 +3,7 @@ export type LoanStatus = "active" | "paid" | "defaulted";
 export type EffectiveLoanStatus = LoanStatus | "overdue";
 export type ScheduleStatus = "pending" | "paid" | "partial" | "overdue";
 export type PaymentMethod = "cash" | "gcash" | "bank_transfer" | "other";
+export type InterestRatePeriod = "total" | "monthly";
 
 export type Profile = {
   id: string;
@@ -21,6 +22,7 @@ export type LoanSummary = {
   client_phone: string | null;
   principal: number;
   interest_rate: number;
+  interest_rate_period: InterestRatePeriod;
   term_months: number;
   start_date: string;
   status: LoanStatus;
@@ -82,6 +84,7 @@ export type Database = {
           client_id: string;
           principal: number;
           interest_rate: number;
+          interest_rate_period: InterestRatePeriod;
           term_months: number;
           start_date: string;
           status: LoanStatus;
@@ -92,6 +95,7 @@ export type Database = {
           client_id: string;
           principal: number;
           interest_rate: number;
+          interest_rate_period?: InterestRatePeriod;
           term_months: number;
           start_date: string;
           status?: LoanStatus;
@@ -152,6 +156,7 @@ export type Database = {
           p_term_months: number;
           p_start_date: string;
           p_notes?: string | null;
+          p_interest_rate_period?: InterestRatePeriod;
         };
         Returns: string;
       };

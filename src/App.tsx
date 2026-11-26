@@ -1,8 +1,9 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Login } from "./pages/Login";
+import { ResetPassword } from "./pages/ResetPassword";
 import { Clients } from "./pages/admin/Clients";
 import { AdminDashboard } from "./pages/admin/Dashboard";
 import { AdminLoanDetail } from "./pages/admin/LoanDetail";
@@ -25,34 +26,51 @@ function RootRedirect() {
   return <Navigate to={profile.role === "admin" ? "/admin" : "/my-loans"} replace />;
 }
 
+function AppRoutes() {
+  const { isPasswordRecovery } = useAuth();
+  const { pathname, search, hash } = useLocation();
+  const expiredLink = new URLSearchParams(search).get("error_code") === "otp_expired"
+    || new URLSearchParams(hash.slice(1)).get("error_code") === "otp_expired";
+
+  if ((isPasswordRecovery || expiredLink) && pathname !== "/reset-password") {
+    return <Navigate to="/reset-password" replace />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Login key="signup" createAccount />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+
+      <Route element={<ProtectedRoute allow="admin" />}>
+        <Route element={<Layout />}>
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/clients" element={<Clients />} />
+          <Route path="/admin/loans" element={<AdminLoans />} />
+          <Route path="/admin/loans/new" element={<NewLoan />} />
+          <Route path="/admin/loans/:id" element={<AdminLoanDetail />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute allow="client" />}>
+        <Route element={<Layout />}>
+          <Route path="/my-loans" element={<MyLoans />} />
+          <Route path="/my-loans/:id" element={<ClientLoanView />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+      </Route>
+
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="*" element={<RootRedirect />} />
+    </Routes>
+  );
+}
+
 export function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-
-          <Route element={<ProtectedRoute allow="admin" />}>
-            <Route element={<Layout />}>
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/clients" element={<Clients />} />
-              <Route path="/admin/loans" element={<AdminLoans />} />
-              <Route path="/admin/loans/new" element={<NewLoan />} />
-              <Route path="/admin/loans/:id" element={<AdminLoanDetail />} />
-            </Route>
-          </Route>
-
-          <Route element={<ProtectedRoute allow="client" />}>
-            <Route element={<Layout />}>
-              <Route path="/my-loans" element={<MyLoans />} />
-              <Route path="/my-loans/:id" element={<ClientLoanView />} />
-              <Route path="/profile" element={<Profile />} />
-            </Route>
-          </Route>
-
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="*" element={<RootRedirect />} />
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
     </AuthProvider>
   );

@@ -3,7 +3,7 @@
 create schema if not exists private;
 
 -- 1. Tables
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,
   full_name text not null,
@@ -12,7 +12,7 @@ create table public.profiles (
   created_at timestamptz not null default now()
 );
 
-create table public.loans (
+create table if not exists public.loans (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references public.profiles(id) on delete restrict,
   principal numeric(12,2) not null check (principal > 0),
@@ -24,7 +24,7 @@ create table public.loans (
   created_at timestamptz not null default now()
 );
 
-create table public.payment_schedule (
+create table if not exists public.payment_schedule (
   id uuid primary key default gen_random_uuid(),
   loan_id uuid not null references public.loans(id) on delete cascade,
   installment_number integer not null check (installment_number > 0),
@@ -34,7 +34,7 @@ create table public.payment_schedule (
   unique (loan_id, installment_number)
 );
 
-create table public.payments (
+create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   loan_id uuid not null references public.loans(id) on delete cascade,
   schedule_id uuid references public.payment_schedule(id) on delete set null,
@@ -47,11 +47,11 @@ create table public.payments (
 );
 
 -- 2. Indexes on foreign keys and RLS/query columns
-create index loans_client_id_idx on public.loans (client_id);
-create index loans_status_idx on public.loans (status);
-create index payment_schedule_loan_id_due_date_idx on public.payment_schedule (loan_id, due_date);
-create index payments_loan_id_idx on public.payments (loan_id);
-create index payments_schedule_id_idx on public.payments (schedule_id);
+create index if not exists loans_client_id_idx on public.loans (client_id);
+create index if not exists loans_status_idx on public.loans (status);
+create index if not exists payment_schedule_loan_id_due_date_idx on public.payment_schedule (loan_id, due_date);
+create index if not exists payments_loan_id_idx on public.payments (loan_id);
+create index if not exists payments_schedule_id_idx on public.payments (schedule_id);
 
 -- 3. Private admin check helper (non-exposed schema, checks auth.uid())
 create or replace function private.is_admin()
@@ -294,11 +294,26 @@ set search_path = ''
 as $$
 declare
   v_payment_id uuid;
-  v_sched_due numeric(12,2);
-  v_sched_paid numeric(12,2);
   v_total_payable numeric(12,2);
-  v_total_paid numeric(12,2);
+  v_total_paid numeric;
 begin
+  -- Serialize payment posting and installment updates for each loan.
+  select principal + round(principal * interest_rate / 100, 2)
+  into v_total_payable
+  from public.loans
+  where id = p_loan_id
+  for no key update;
+
+  if not found then
+    raise exception 'Loan not found';
+  end if;
+
+  if p_schedule_id is not null and not exists (
+    select 1 from public.payment_schedule where id = p_schedule_id and loan_id = p_loan_id
+  ) then
+    raise exception 'Installment does not belong to this loan';
+  end if;
+
   insert into public.payments (loan_id, schedule_id, amount, paid_on, method, reference, recorded_by)
   values (
     p_loan_id,
@@ -311,31 +326,41 @@ begin
   )
   returning id into v_payment_id;
 
-  if p_schedule_id is not null then
-    select amount_due into v_sched_due
-    from public.payment_schedule
-    where id = p_schedule_id and loan_id = p_loan_id;
-
-    if v_sched_due is not null then
-      select coalesce(sum(amount), 0) into v_sched_paid
-      from public.payments
-      where schedule_id = p_schedule_id;
-
-      update public.payment_schedule
-      set status = case when v_sched_paid >= v_sched_due then 'paid' else 'partial' end
-      where id = p_schedule_id;
-    end if;
-  end if;
-
-  select (principal + round(principal * (interest_rate / 100.0), 2))::numeric(12,2)
-  into v_total_payable
-  from public.loans
-  where id = p_loan_id;
-
-  select coalesce(sum(amount), 0)::numeric(12,2)
+  select coalesce(sum(amount), 0)
   into v_total_paid
   from public.payments
   where loan_id = p_loan_id;
+
+  -- Credit payments tied to an installment first, then apply the remaining
+  -- receipts to the oldest unpaid installments. Each receipt stays one row.
+  with designated as (
+    select schedule_id, sum(amount) as paid
+    from public.payments
+    where loan_id = p_loan_id and schedule_id is not null
+    group by schedule_id
+  ), balances as (
+    select s.id, s.installment_number, s.amount_due,
+      greatest(s.amount_due - coalesce(d.paid, 0), 0) as remaining
+    from public.payment_schedule s
+    left join designated d on d.schedule_id = s.id
+    where s.loan_id = p_loan_id
+  ), allocation as (
+    select id, amount_due, remaining,
+      v_total_paid - sum(amount_due - remaining) over () as unallocated,
+      sum(remaining) over (order by installment_number rows unbounded preceding) as cumulative_remaining
+    from balances
+  ), next_statuses as (
+    select id, case
+      when remaining = 0 or unallocated >= cumulative_remaining then 'paid'
+      when remaining < amount_due or unallocated > cumulative_remaining - remaining then 'partial'
+      else 'pending'
+    end as status
+    from allocation
+  )
+  update public.payment_schedule s
+  set status = n.status
+  from next_statuses n
+  where s.id = n.id and s.status <> n.status;
 
   if v_total_paid >= v_total_payable then
     update public.loans
@@ -346,3 +371,14 @@ begin
   return v_payment_id;
 end;
 $$;
+
+-- 7. Data API grants. Row access is enforced separately by the policies above.
+grant select on public.profiles, public.loans, public.payment_schedule, public.payments, public.loan_summary to authenticated;
+grant insert on public.loans, public.payment_schedule, public.payments to authenticated;
+grant update on public.profiles, public.loans, public.payment_schedule to authenticated;
+grant insert on public.profiles to service_role;
+
+revoke execute on function public.create_loan_with_schedule(uuid, numeric, numeric, integer, date, text) from public, anon;
+revoke execute on function public.record_payment(uuid, uuid, numeric, date, text, text) from public, anon;
+grant execute on function public.create_loan_with_schedule(uuid, numeric, numeric, integer, date, text) to authenticated;
+grant execute on function public.record_payment(uuid, uuid, numeric, date, text, text) to authenticated;

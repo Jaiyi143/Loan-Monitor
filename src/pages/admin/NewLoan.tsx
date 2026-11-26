@@ -11,7 +11,7 @@ export function NewLoan() {
 
   const [clientId, setClientId] = useState("");
   const [principal, setPrincipal] = useState("10000");
-  const [interestRate, setInterestRate] = useState("10");
+  const [interestRate, setInterestRate] = useState("");
   const [termMonths, setTermMonths] = useState("6");
   const [startDate, setStartDate] = useState(todayIsoDate());
   const [notes, setNotes] = useState("");
@@ -22,7 +22,7 @@ export function NewLoan() {
     const p = Number(principal);
     const r = Number(interestRate);
     const t = Number(termMonths);
-    if (!(p > 0) || r < 0 || !Number.isInteger(t) || t <= 0 || !startDate) return null;
+    if (!interestRate || !startDate) return null;
     try {
       return generateFlatMonthlySchedule(p, r, t, startDate);
     } catch {
@@ -37,12 +37,14 @@ export function NewLoan() {
       setError("Select a client.");
       return;
     }
+    if (!preview) return;
     setSaving(true);
 
     const { data: loanId, error: rpcError } = await supabase.rpc("create_loan_with_schedule", {
       p_client_id: clientId,
       p_principal: Number(principal),
       p_interest_rate: Number(interestRate),
+      p_interest_rate_period: "monthly",
       p_term_months: Number(termMonths),
       p_start_date: startDate,
       p_notes: notes.trim() || null,
@@ -69,7 +71,7 @@ export function NewLoan() {
         </Link>
         <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">Create Loan</h1>
         <p className="text-sm text-slate-600">
-          Flat-rate total interest split into equal monthly installments.
+          Flat monthly interest is calculated on the original principal for each month of the term.
         </p>
       </div>
 
@@ -124,13 +126,14 @@ export function NewLoan() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="loan-rate" className="block text-sm font-medium text-slate-800">
-                Flat interest (%)
+                Monthly interest (%)
               </label>
               <input
                 id="loan-rate"
                 type="number"
                 step="0.01"
                 min="0"
+                max="9999.99"
                 required
                 value={interestRate}
                 onChange={(e) => setInterestRate(e.target.value)}

@@ -1,4 +1,4 @@
-import type { ScheduleStatus } from "../types/database";
+import type { InterestRatePeriod, ScheduleStatus } from "../types/database";
 
 export interface GeneratedInstallment {
   installmentNumber: number;
@@ -12,9 +12,7 @@ export interface FlatScheduleResult {
   installments: GeneratedInstallment[];
 }
 
-export function roundCents(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
+const maxLoanCents = 999_999_999_999n;
 
 export function todayIsoDate(): string {
   const now = new Date();
@@ -41,29 +39,39 @@ export function addMonthsIso(startDateIso: string, monthsToAdd: number): string 
 
 export function generateFlatMonthlySchedule(
   principal: number,
-  interestRatePercent: number,
+  monthlyRatePercent: number,
   termMonths: number,
   startDateIso: string,
 ): FlatScheduleResult {
-  if (!(principal > 0) || interestRatePercent < 0 || !Number.isInteger(termMonths) || termMonths <= 0) {
+  if (!(principal > 0 && principal <= Number(maxLoanCents) / 100) ||
+    !(monthlyRatePercent >= 0 && monthlyRatePercent <= 9999.99) ||
+    !Number.isInteger(termMonths) || termMonths < 1 || termMonths > 360) {
     throw new Error("Invalid loan parameters");
   }
 
-  const totalInterest = roundCents(principal * (interestRatePercent / 100));
-  const totalPayable = roundCents(principal + totalInterest);
-  const baseInstallment = Math.floor((totalPayable / termMonths) * 100) / 100;
-  const lastInstallment = roundCents(totalPayable - baseInstallment * (termMonths - 1));
+  const principalCents = BigInt(Math.round(principal * 100));
+  const monthlyRateBasisPoints = BigInt(Math.round(monthlyRatePercent * 100));
+  const months = BigInt(termMonths);
+  // Round half a cent up, the same way PostgreSQL rounds positive numeric amounts.
+  const interestCents = (principalCents * monthlyRateBasisPoints * months + 5000n) / 10000n;
+  const payableCents = principalCents + interestCents;
+  if (payableCents > maxLoanCents || payableCents < months) {
+    throw new Error("Loan amount is outside the supported range for this term.");
+  }
+
+  const baseInstallment = payableCents / months;
+  const lastInstallment = payableCents - baseInstallment * (months - 1n);
 
   const installments: GeneratedInstallment[] = [];
   for (let i = 1; i <= termMonths; i++) {
     installments.push({
       installmentNumber: i,
       dueDate: addMonthsIso(startDateIso, i),
-      amountDue: i === termMonths ? lastInstallment : baseInstallment,
+      amountDue: Number(i === termMonths ? lastInstallment : baseInstallment) / 100,
     });
   }
 
-  return { totalInterest, totalPayable, installments };
+  return { totalInterest: Number(interestCents) / 100, totalPayable: Number(payableCents) / 100, installments };
 }
 
 export function getEffectiveScheduleStatus(
@@ -85,6 +93,10 @@ const phpFormatter = new Intl.NumberFormat("en-PH", {
 
 export function formatPHP(amount: number): string {
   return phpFormatter.format(amount);
+}
+
+export function formatInterestRate(rate: number, period: InterestRatePeriod): string {
+  return `${rate}% ${period === "monthly" ? "per month" : "total"}`;
 }
 
 export function formatDate(isoDate: string | null): string {
