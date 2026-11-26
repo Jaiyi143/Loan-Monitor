@@ -1,9 +1,16 @@
+import { useEffect } from "react";
 import { PasswordForm } from "../../components/PasswordForm";
 import { PhoneSignInForm } from "../../components/PhoneSignInForm";
 import { useAuth } from "../../context/AuthContext";
 
 export function Profile() {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
+
+  useEffect(() => {
+    refreshProfile();
+    window.addEventListener("focus", refreshProfile);
+    return () => window.removeEventListener("focus", refreshProfile);
+  }, [refreshProfile]);
 
   return (
     <div className="max-w-lg space-y-6">
@@ -29,7 +36,12 @@ export function Profile() {
         </dl>
       </div>
 
-      <PhoneSignInForm contactPhone={profile?.phone ?? null} signInPhone={profile?.sign_in_phone ?? null} />
+      <PhoneSignInForm
+        key={`${profile?.phone ?? ""}:${profile?.sign_in_phone ?? ""}`}
+        contactPhone={profile?.phone ?? null}
+        signInPhone={profile?.sign_in_phone ?? null}
+        onSaved={refreshProfile}
+      />
       <PasswordForm />
     </div>
   );

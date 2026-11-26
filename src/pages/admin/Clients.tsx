@@ -73,12 +73,12 @@ export function Clients() {
       .from("profiles")
       .update({
         full_name: editName.trim(),
-        phone: editPhone.trim() || null,
+        ...(editPhone.trim() === (editing.phone ?? "") ? {} : { phone: editPhone.trim() || null }),
       })
       .eq("id", editing.id);
 
     if (updateError) {
-      setFormError(updateError.message);
+      setFormError(updateError.code === "23505" ? "This phone number is already used for sign-in." : updateError.message);
       setSaving(false);
       return;
     }

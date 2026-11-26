@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import type { LoanSummary, PaymentRow, PaymentScheduleRow, Profile } from "../types/database";
 
@@ -83,14 +83,18 @@ export function useClients() {
   const [clients, setClients] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const latestRequest = useRef(0);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (background = false) => {
+    const request = ++latestRequest.current;
+    if (!background) setLoading(true);
     const { data, error: queryError } = await supabase
       .from("profiles")
       .select("*")
       .eq("role", "client")
       .order("full_name", { ascending: true });
+
+    if (request !== latestRequest.current) return;
 
     if (queryError) {
       setError(queryError.message);
@@ -102,7 +106,10 @@ export function useClients() {
   }, []);
 
   useEffect(() => {
+    const refreshClients = () => void reload(true);
     void reload();
+    window.addEventListener("focus", refreshClients);
+    return () => window.removeEventListener("focus", refreshClients);
   }, [reload]);
 
   return { clients, loading, error, reload };

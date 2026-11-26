@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import type { Profile } from "../types/database";
@@ -11,6 +11,7 @@ interface AuthContextValue {
   authLoading: boolean;
   isPasswordRecovery: boolean;
   error: string | null;
+  refreshProfile: () => void;
   signOut: () => Promise<void>;
   finishPasswordRecovery: () => void;
 }
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
+  const [profileVersion, setProfileVersion] = useState(0);
   const [profileResult, setProfileResult] = useState<{
     userId: string;
     profile: Profile | null;
@@ -30,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user = session?.user ?? null;
   const userId = user?.id;
   const currentProfile = profileResult?.userId === userId ? profileResult : null;
+  const refreshProfile = useCallback(() => setProfileVersion((version) => version + 1), []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -65,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [userId, profileVersion]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authLoading,
         isPasswordRecovery: Boolean(userId && userId === recoveryUserId),
         error: currentProfile?.error ?? null,
+        refreshProfile,
         signOut,
         finishPasswordRecovery: () => setRecoveryUserId(null),
       }}
