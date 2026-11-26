@@ -1,0 +1,5 @@
+project_id = "loan-monitor"
+
+[functions.phone-sign-in]
+# The function authenticates the phone number and password through Supabase Auth.
+verify_jwt = false

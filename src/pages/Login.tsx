@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { Landmark, Lock } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { normalizePhoneNumber } from "../lib/phoneNumber";
@@ -34,15 +35,23 @@ export function Login({ createAccount = false }: { createAccount?: boolean }) {
     }
 
     setSubmitting(true);
-    const credentials = phoneNumber ? { phone: phoneNumber, password } : { email: identifier, password };
-    const { error: authError } = await supabase.auth.signInWithPassword(credentials);
-
-    if (authError) {
-      setError(authError.code === "phone_provider_disabled"
-        ? "Phone sign-in is currently unavailable. Sign in with your email."
-        : authError.code === "phone_not_confirmed"
-          ? "Sign in with your email and verify your phone in Profile."
-          : authError.message);
+    if (phoneNumber) {
+      const { data, error: phoneError } = await supabase.functions.invoke<{ access_token: string; refresh_token: string }>(
+        "phone-sign-in",
+        { body: { phone: phoneNumber, password } },
+      );
+      if (phoneError || !data) {
+        const status = phoneError instanceof FunctionsHttpError ? phoneError.context.status : undefined;
+        setError(status === 401 ? "Invalid phone number or password."
+          : status === 429 ? "Too many attempts. Try again later or sign in with email."
+          : "Phone sign-in is temporarily unavailable. Try signing in with email.");
+      } else {
+        const { error: authError } = await supabase.auth.setSession(data);
+        if (authError) setError(authError.message);
+      }
+    } else {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: identifier, password });
+      if (authError) setError(authError.message);
     }
     setSubmitting(false);
   };
@@ -95,7 +104,7 @@ export function Login({ createAccount = false }: { createAccount?: boolean }) {
       setError(signupError.message);
     } else if (!data.session) {
       setPassword("");
-      setNotice("Confirm your email first. After signing in, verify your phone in Profile to use it for sign-in.");
+      setNotice("Confirm your email first, then sign in with your email or phone number.");
     }
     setSubmitting(false);
   };

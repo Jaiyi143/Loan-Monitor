@@ -1,10 +1,9 @@
 import { PasswordForm } from "../../components/PasswordForm";
-import { PhoneVerificationForm } from "../../components/PhoneVerificationForm";
+import { PhoneSignInForm } from "../../components/PhoneSignInForm";
 import { useAuth } from "../../context/AuthContext";
 
 export function Profile() {
-  const { profile, user } = useAuth();
-  const verifiedPhone = user?.phone && user.phone_confirmed_at ? `+${user.phone.replace(/^\+/, "")}` : null;
+  const { profile } = useAuth();
 
   return (
     <div className="max-w-lg space-y-6">
@@ -25,12 +24,12 @@ export function Profile() {
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-slate-500">Phone</dt>
-            <dd className="font-medium text-slate-900 tabular-nums">{verifiedPhone ?? profile?.phone ?? "—"}</dd>
+            <dd className="font-medium text-slate-900 tabular-nums">{profile?.phone ?? "—"}</dd>
           </div>
         </dl>
       </div>
 
-      <PhoneVerificationForm contactPhone={profile?.phone ?? null} verifiedPhone={verifiedPhone} />
+      <PhoneSignInForm contactPhone={profile?.phone ?? null} signInPhone={profile?.sign_in_phone ?? null} />
       <PasswordForm />
     </div>
   );

@@ -10,6 +10,7 @@ export type Profile = {
   email: string;
   full_name: string;
   phone: string | null;
+  sign_in_phone: string | null;
   role: UserRole;
   created_at: string;
 };
@@ -148,6 +149,10 @@ export type Database = {
       };
     };
     Functions: {
+      set_my_sign_in_phone: {
+        Args: { p_phone: string };
+        Returns: string;
+      };
       create_loan_with_schedule: {
         Args: {
           p_client_id: string;
