@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { PaymentsTable, ScheduleTable } from "../../components/LoanTables";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useLoanDetail } from "../../hooks/useLoans";
@@ -10,6 +10,7 @@ import type { LoanStatus, PaymentMethod, PaymentScheduleRow } from "../../types/
 
 export function AdminLoanDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { loan, schedule, payments, loading, error, reload } = useLoanDetail(id);
 
   const [scheduleId, setScheduleId] = useState<string>("");
@@ -17,7 +18,7 @@ export function AdminLoanDetail() {
   const [paidOn, setPaidOn] = useState<string>(todayIsoDate());
   const [method, setMethod] = useState<PaymentMethod>("gcash");
   const [reference, setReference] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"payment" | "status" | "delete" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -29,10 +30,10 @@ export function AdminLoanDetail() {
 
   const handleRecordPayment = async (e: FormEvent) => {
     e.preventDefault();
-    if (!loan) return;
+    if (!loan || pendingAction) return;
     setActionError(null);
     setNotice(null);
-    setSaving(true);
+    setPendingAction("payment");
 
     const { error: rpcError } = await supabase.rpc("record_payment", {
       p_loan_id: loan.id,
@@ -45,7 +46,7 @@ export function AdminLoanDetail() {
 
     if (rpcError) {
       setActionError(rpcError.message);
-      setSaving(false);
+      setPendingAction(null);
       return;
     }
 
@@ -53,13 +54,14 @@ export function AdminLoanDetail() {
     setAmount("");
     setReference("");
     setNotice("Payment recorded.");
-    setSaving(false);
     await reload();
+    setPendingAction(null);
   };
 
   const handleStatusChange = async (nextStatus: LoanStatus) => {
-    if (!loan) return;
+    if (!loan || pendingAction) return;
     setActionError(null);
+    setPendingAction("status");
     const { error: updateError } = await supabase
       .from("loans")
       .update({ status: nextStatus })
@@ -67,9 +69,30 @@ export function AdminLoanDetail() {
 
     if (updateError) {
       setActionError(updateError.message);
+    } else {
+      await reload();
+    }
+    setPendingAction(null);
+  };
+
+  const handleDeleteLoan = async () => {
+    if (!loan || pendingAction || !window.confirm(
+      `Permanently delete the ${formatPHP(Number(loan.principal))} loan for ${loan.client_name}? Its schedule and recorded payments will also be deleted.`,
+    )) return;
+
+    setActionError(null);
+    setNotice(null);
+    setPendingAction("delete");
+
+    const { data, error: deleteError } = await supabase.rpc("delete_admin_loan", { p_loan_id: loan.id });
+
+    if (deleteError || !data) {
+      setActionError(deleteError?.message ?? "The loan was not deleted. It may have already been removed.");
+      setPendingAction(null);
       return;
     }
-    await reload();
+
+    void navigate("/admin/loans", { replace: true });
   };
 
   if (loading) {
@@ -111,13 +134,14 @@ export function AdminLoanDetail() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label htmlFor="loan-status-select" className="text-xs font-medium text-slate-600">
               Loan status
             </label>
             <select
               id="loan-status-select"
               value={loan.status}
+              disabled={pendingAction !== null}
               onChange={(e) => void handleStatusChange(e.target.value as LoanStatus)}
               className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
             >
@@ -125,6 +149,15 @@ export function AdminLoanDetail() {
               <option value="paid">Paid</option>
               <option value="defaulted">Defaulted</option>
             </select>
+            <button
+              type="button"
+              onClick={() => void handleDeleteLoan()}
+              disabled={pendingAction !== null}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-sm font-medium text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              {pendingAction === "delete" ? "Deleting..." : "Delete loan"}
+            </button>
           </div>
         </div>
       </div>
@@ -255,10 +288,10 @@ export function AdminLoanDetail() {
         <div className="mt-4 flex justify-end">
           <button
             type="submit"
-            disabled={saving}
+            disabled={pendingAction !== null}
             className="cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {saving ? "Recording..." : "Save payment"}
+            {pendingAction === "payment" ? "Recording..." : "Save payment"}
           </button>
         </div>
       </form>

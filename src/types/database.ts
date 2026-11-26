@@ -149,6 +149,10 @@ export type Database = {
       };
     };
     Functions: {
+      delete_admin_loan: {
+        Args: { p_loan_id: string };
+        Returns: boolean;
+      };
       set_my_sign_in_phone: {
         Args: { p_phone: string };
         Returns: string;
