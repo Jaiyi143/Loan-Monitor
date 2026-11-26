@@ -5,4 +5,5 @@ dist
 .wrangler
 *.local
 .agents
+.agents/skills
 .wrangler
