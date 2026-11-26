@@ -4,6 +4,6 @@ dist
 .env.local
 .wrangler
 *.local
-.agents
-.agents/skills
+/.agents/
+/.codex/skills/
 .wrangler
