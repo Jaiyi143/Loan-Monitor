@@ -6,4 +6,6 @@ dist
 *.local
 /.agents/
 /.codex/skills/
+/supabase/**/*.sql
+/supabase/functions/
 .wrangler
